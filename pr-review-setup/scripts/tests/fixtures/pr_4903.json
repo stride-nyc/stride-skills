@@ -1,0 +1,31 @@
+{
+  "pr": {"number": 4903, "url": "https://github.com/newjersey/navigator.business.nj.gov/pull/4903", "mergedAt": "2025-04-02T11:00:00Z"},
+  "review_comments": [
+    {
+      "user": {"login": "jtabron1", "type": "User"},
+      "body": "Can you add a unit test for this new branch in the eligibility logic? We don't have coverage for the new-jersey-resident false path.",
+      "path": "shared/src/domain-logic/eligibility.ts",
+      "created_at": "2025-04-01T15:10:00Z"
+    },
+    {
+      "user": {"login": "mjackson21", "type": "User"},
+      "body": "This import goes up three directories with `../../../`. Please use the package alias instead of a relative import, per the no-relative-imports rule in the PR checklist.",
+      "path": "web/src/pages/dashboard.tsx",
+      "created_at": "2025-04-01T16:00:00Z"
+    },
+    {
+      "user": {"login": "renovate[bot]", "type": "Bot"},
+      "body": "This PR contains the following updates...",
+      "path": "yarn.lock",
+      "created_at": "2025-03-30T08:00:00Z"
+    }
+  ],
+  "reviews": [
+    {
+      "user": {"login": "jtabron1", "type": "User"},
+      "body": "+1",
+      "submitted_at": "2025-04-02T10:55:00Z"
+    }
+  ],
+  "issue_comments": []
+}

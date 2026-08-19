@@ -1,0 +1,37 @@
+{
+  "pr": {"number": 5012, "url": "https://github.com/newjersey/navigator.business.nj.gov/pull/5012", "mergedAt": "2025-05-20T09:30:00Z"},
+  "review_comments": [
+    {
+      "user": {"login": "afromanjr", "type": "User"},
+      "body": "Missing a test for the new domain-logic branch here too -- same as the eligibility PR a while back, we should probably cover the false path whenever we add a new conditional in shared/.",
+      "path": "shared/src/domain-logic/taxRegistration.ts",
+      "created_at": "2025-05-19T13:45:00Z"
+    },
+    {
+      "user": {"login": "fearhar", "type": "User"},
+      "body": "This button has no visible label and relies on an icon only -- can you add an aria-label so it's accessible to screen readers?",
+      "path": "web/src/components/IconButton.tsx",
+      "created_at": "2025-05-19T14:02:00Z"
+    },
+    {
+      "user": {"login": "github-actions", "type": "Bot"},
+      "body": "Coverage report: 87.2% (+0.3%)",
+      "path": null,
+      "created_at": "2025-05-19T14:10:00Z"
+    }
+  ],
+  "reviews": [
+    {
+      "user": {"login": "fearhar", "type": "User"},
+      "body": "Looks good",
+      "submitted_at": "2025-05-20T09:00:00Z"
+    }
+  ],
+  "issue_comments": [
+    {
+      "user": {"login": "afromanjr", "type": "User"},
+      "body": "Confirmed the accessibility fix works with VoiceOver, approving.",
+      "created_at": "2025-05-20T09:20:00Z"
+    }
+  ]
+}
