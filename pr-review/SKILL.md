@@ -5,11 +5,14 @@ description: >-
   it, using data already prepared by the companion `pr-review-setup` skill: cross-checks the diff
   against this repo's historical review feedback and coding standards, discovers and runs whatever
   linters/typecheckers already exist, verifies the change against the linked story's acceptance
-  criteria, and drafts a PR description from the repo's own template. Use for "review my PR before I
-  request review," "pre-review this branch," "check this diff before sending it out," "run the PR
-  review checklist," or drafting/updating a pull request description — even unnamed. Only *consumes*
-  prepared data; if none exists, says so and points to `pr-review-setup` instead of mining anything
-  itself. Never posts/creates/edits on GitHub without showing the user first and getting confirmation.
+  criteria, and drafts a PR description from the repo's own template. After the review, offers an
+  opt-in feedback loop to score findings — surfacing high-signal patterns more prominently over time,
+  deprioritizing low-relevance ones, and suggesting new lint rules on a separate branch when a
+  finding can be automated. Use for "review my PR before I request review," "pre-review this branch,"
+  "check this diff before sending it out," "run the PR review checklist," "tune my review patterns,"
+  or drafting/updating a pull request description — even unnamed. Only *consumes* prepared data; if
+  none exists, says so and points to `pr-review-setup` instead of mining anything itself. Never
+  posts/creates/edits on GitHub without showing the user first and getting confirmation.
 compatibility: Reads data produced by the `pr-review-setup` skill at
   `.claude/pr-review-data/<owner>-<repo>/`. Run `pr-review-setup` first if that directory doesn't
   exist yet. Uses the GitHub CLI (`gh`) for anything that touches an actual PR (viewing, creating,
