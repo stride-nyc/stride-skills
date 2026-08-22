@@ -215,34 +215,38 @@ Lives at `.claude/pr-review-data/<owner>-<repo>/pattern-scores.json`. Create if 
 Batch all score updates from the session into a single write at the end of triage. Show the user a
 brief summary of what will be written ("Updating scores for 3 patterns") and confirm before writing.
 
-### Automating a finding as a lint rule
+### Suggesting a lint rule for relevant findings
 
-Available for Phase 1+2 findings only (if the finding was already caught by a linter in Phase 3, the
-rule exists — offer to escalate its severity instead, see below).
+This happens automatically when a user marks a Phase 1+2 finding as relevant ("Good catch /
+relevant"). After updating the score, check whether the pattern is already enforced by the project's
+linters (cross-reference against Phase 3's discovered commands and config files). If it is already
+caught — skip this step entirely, nothing to add. If it is not already caught, determine whether it
+can be expressed as a static analysis rule:
 
-When a user says a pattern should be caught automatically rather than by AI judgment:
+- **ESLint**: a built-in rule; a plugin rule already in `package.json`; or `no-restricted-syntax` /
+  `no-restricted-imports` for structural patterns without a dedicated rule.
+- **Ruff / flake8**: a rule code in `extend-select` or `per-file-ignores` in `pyproject.toml`.
+- **Biome**: a linter rule entry in `biome.json`.
+- **golangci-lint**: an enabled linter in `.golangci.yml`.
 
-1. Identify which linter(s) the project uses — already discovered in Phase 3.
-2. Draft the most specific rule available for that linter:
-   - **ESLint**: prefer a built-in rule; a plugin rule already in `package.json`; or
-     `no-restricted-syntax` / `no-restricted-imports` as a last resort for structural patterns.
-   - **Ruff / flake8**: a rule code in `extend-select` or `per-file-ignores` in `pyproject.toml`.
-   - **Biome**: a linter rule entry in `biome.json`.
-   - **golangci-lint**: an enabled linter entry in `.golangci.yml`.
-   - **Custom script**: if no standard rule covers the pattern, draft a small grep/ast-grep check
-     the team can add to a pre-commit hook or CI step — be explicit that this is a custom workaround,
-     not a first-class lint rule.
-3. If no rule can technically enforce the check (it's inherently judgment-based — e.g. "this
-   abstraction is the wrong level"), say so clearly. Offer to strengthen the pattern's entry in
-   `coding-standards.md` instead (e.g. promoting "should" language to "must"), or leave it to human
-   review. Don't fabricate a rule.
-4. Show the complete diff — which file, what lines change — and get explicit confirmation before
-   writing. After writing, note that Phase 3 will now catch this automatically on future runs.
+If the pattern is inherently judgment-based (e.g. "this abstraction is the wrong level"), it cannot
+be encoded as a rule — don't suggest one. Skip this step silently; the score update alone is enough.
 
-**For Phase 3 findings (linter already catches it):** the rule exists, so "automate" means escalating
-it. Offer to change its severity from `warn` to `error` in the linter config, or add it to the CI
-failure threshold if it currently only runs in advisory mode. Show the current config entry and the
-proposed change; confirm before writing.
+If a rule can be drafted, suggest creating a new branch for it. A lint config change is a separate
+concern from the PR being reviewed and must not be mixed into its diff. Propose a branch name (e.g.
+`lint/enforce-<pattern-slug>`), show the complete config diff, and ask: "Want me to create a branch
+with this rule added?" If the user says yes:
+
+```bash
+git stash -u 2>/dev/null; git checkout -b <branch-name>
+# apply the config change
+git add <config-file>
+git commit -m "enforce <pattern> via <linter>"
+git checkout -; git stash pop 2>/dev/null
+```
+
+After returning to the original branch, offer to open a PR for the lint branch (`gh pr create`) —
+subject to the same explicit-confirmation rule as Phase 5.
 
 ## Files
 
