@@ -231,34 +231,9 @@ brief summary of what will be written ("Updating scores for 3 patterns") and con
 
 This happens automatically when a user marks a Phase 1+2 finding as relevant ("Good catch /
 relevant"). After updating the score, check whether the pattern is already enforced by the project's
-linters (cross-reference against Phase 3's discovered commands and config files). If it is already
-caught — skip this step entirely, nothing to add. If it is not already caught, determine whether it
-can be expressed as a static analysis rule:
-
-- **ESLint**: a built-in rule; a plugin rule already in `package.json`; or `no-restricted-syntax` /
-  `no-restricted-imports` for structural patterns without a dedicated rule.
-- **Ruff / flake8**: a rule code in `extend-select` or `per-file-ignores` in `pyproject.toml`.
-- **Biome**: a linter rule entry in `biome.json`.
-- **golangci-lint**: an enabled linter in `.golangci.yml`.
-
-If the pattern is inherently judgment-based (e.g. "this abstraction is the wrong level"), it cannot
-be encoded as a rule — don't suggest one. Skip this step silently; the score update alone is enough.
-
-If a rule can be drafted, suggest creating a new branch for it. A lint config change is a separate
-concern from the PR being reviewed and must not be mixed into its diff. Propose a branch name (e.g.
-`lint/enforce-<pattern-slug>`), show the complete config diff, and ask: "Want me to create a branch
-with this rule added?" If the user says yes:
-
-```bash
-git stash -u 2>/dev/null; git checkout -b <branch-name>
-# apply the config change
-git add <config-file>
-git commit -m "enforce <pattern> via <linter>"
-git checkout -; git stash pop 2>/dev/null
-```
-
-After returning to the original branch, offer to open a PR for the lint branch (`gh pr create`) —
-subject to the same explicit-confirmation rule as Phase 5.
+linters. If it can be expressed as a new rule, suggest creating a branch for it. Full decision logic,
+per-linter rule formats, and the branch workflow are in
+[`references/lint-rule-automation.md`](references/lint-rule-automation.md).
 
 ## Files
 
@@ -269,6 +244,8 @@ subject to the same explicit-confirmation rule as Phase 5.
 - `scripts/pr_template.py` — Phase 5 template discovery and checklist-preserving split. Fixture-tested
   against navigator.business.nj.gov's real PR template; self-test via `--self-test`.
 - `references/acceptance-criteria-verification.md` — how to classify and report Phase 4 findings.
+- `references/lint-rule-automation.md` — Phase 6 lint rule suggestion: how to determine if a rule is
+  possible, per-linter config formats, and the new-branch workflow.
 - `references/DESIGN.md` — full five-phase design, including why this skill and `pr-review-setup` are
   split the way they are.
 - `.claude/pr-review-data/<owner>-<repo>/pattern-scores.json` — per-repo pattern score map written
