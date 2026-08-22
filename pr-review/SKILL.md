@@ -175,65 +175,9 @@ help tune future reviews?" Keep it opt-in — skip it entirely if the user says 
 
 ## Phase 6 — Post-review feedback and pattern tuning
 
-This phase runs after the user has seen the full report. It has two purposes: adjusting which patterns
-get surfaced prominently in future runs (the scoring system), and optionally automating a finding as a
-lint rule so humans never have to flag it again.
-
-### Collecting feedback
-
-Don't force the user through every finding one by one. Instead, show a numbered summary of the
-Phase 1+2 findings surfaced this run and ask: "Any of these worth adjusting?" The user can call out
-specific findings by number, or say "all good" to skip.
-
-For each finding the user calls out, ask them to classify it:
-
-| Response | What it means | Score change |
-|---|---|---|
-| "Good catch / relevant" | This pattern matters for our codebase | +2 |
-| "Not relevant this PR, but keep it" | Situational; don't penalize | 0 |
-| "Rarely comes up, deprioritize" | Lower its prominence | −1 |
-| "Never relevant here" | Suppress it after a few more hits | −3 |
-| "Ignore permanently" | Never show it again, regardless of score | Sets `explicitlyIgnored: true` |
-
-Suppression is gradual, not immediate: a single "never relevant here" response drops the score by 3
-but doesn't suppress the pattern until it crosses the ≤ −10 threshold — in a multi-person project
-where several people give feedback, a pattern needs consistent dismissal across multiple runs to get
-suppressed. The user can always force immediate suppression with "ignore permanently." This prevents
-a single mis-dismissal from hiding a genuinely useful pattern.
-
-Phase 3 (lint) findings are not scored here — they come from the project's own tooling and aren't
-Claude's judgment calls. If the user wants to act on a lint finding, use the automation path below.
-
-### Writing `pattern-scores.json`
-
-Lives at `.claude/pr-review-data/<owner>-<repo>/pattern-scores.json`. Create if absent. Schema:
-
-```json
-{
-  "version": 1,
-  "patterns": {
-    "Missing null checks on API responses": {
-      "score": -2,
-      "accepts": 1,
-      "dismissals": 3,
-      "explicitlyIgnored": false,
-      "source": "Phase 1",
-      "lastSeen": "2026-08-22"
-    }
-  }
-}
-```
-
-Batch all score updates from the session into a single write at the end of triage. Show the user a
-brief summary of what will be written ("Updating scores for 3 patterns") and confirm before writing.
-
-### Suggesting a lint rule for relevant findings
-
-This happens automatically when a user marks a Phase 1+2 finding as relevant ("Good catch /
-relevant"). After updating the score, check whether the pattern is already enforced by the project's
-linters. If it can be expressed as a new rule, suggest creating a branch for it. Full decision logic,
-per-linter rule formats, and the branch workflow are in
-[`references/lint-rule-automation.md`](references/lint-rule-automation.md).
+If the user agrees, load [`references/feedback-loop.md`](references/feedback-loop.md) and follow it.
+It covers the feedback classification table, score update mechanics, `pattern-scores.json` schema,
+and when to suggest a lint rule for a relevant finding.
 
 ## Files
 
@@ -244,8 +188,10 @@ per-linter rule formats, and the branch workflow are in
 - `scripts/pr_template.py` — Phase 5 template discovery and checklist-preserving split. Fixture-tested
   against navigator.business.nj.gov's real PR template; self-test via `--self-test`.
 - `references/acceptance-criteria-verification.md` — how to classify and report Phase 4 findings.
-- `references/lint-rule-automation.md` — Phase 6 lint rule suggestion: how to determine if a rule is
-  possible, per-linter config formats, and the new-branch workflow.
+- `references/feedback-loop.md` — Phase 6 mechanics: feedback classification, score update rules,
+  `pattern-scores.json` schema. Loaded only if the user opts into Phase 6.
+- `references/lint-rule-automation.md` — lint rule suggestion logic. Loaded from feedback-loop.md
+  only when a finding is marked relevant.
 - `references/DESIGN.md` — full five-phase design, including why this skill and `pr-review-setup` are
   split the way they are.
 - `.claude/pr-review-data/<owner>-<repo>/pattern-scores.json` — per-repo pattern score map written
