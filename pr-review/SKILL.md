@@ -40,6 +40,10 @@ description drafting) are implemented directly in this skill. Phase 6 reads and 
 
 ## Before anything else: check setup has run
 
+**CI mode:** If `GITHUB_ACTIONS=true` or `CI=true` is set, switch to non-interactive mode before
+doing anything else — findings are posted as GitHub PR comments instead of an in-chat report, and
+Phase 6 is skipped. Full details in [`references/ci-mode.md`](references/ci-mode.md).
+
 Look for `.claude/pr-review-data/<owner>-<repo>/manifest.json` (owner/repo from `gh repo view --json
 owner,name`, or from the git remote if `gh` isn't set up). Then load or initialize
 `pattern-scores.json` from the same directory:
@@ -191,6 +195,8 @@ and when to suggest a lint rule for a relevant finding.
 - `scripts/pr_template.py` — Phase 5 template discovery and checklist-preserving split. Fixture-tested
   against navigator.business.nj.gov's real PR template; self-test via `--self-test`.
 - `references/acceptance-criteria-verification.md` — how to classify and report Phase 4 findings.
+- `references/ci-mode.md` — non-interactive mode: comment format, deduplication, and what each
+  phase does differently when running in CI/GitHub Actions.
 - `references/feedback-loop.md` — Phase 6 mechanics: feedback classification, score update rules,
   `pattern-scores.json` schema. Loaded only if the user opts into Phase 6.
 - `references/lint-rule-automation.md` — lint rule suggestion logic. Loaded from feedback-loop.md
