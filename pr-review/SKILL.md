@@ -29,14 +29,21 @@ would otherwise have to do by hand.
 Full design rationale — why the phases are split this way, what's been built versus just designed,
 and what was tested against a real monorepo — is in [`references/DESIGN.md`](references/DESIGN.md).
 
-**Current status:** all five phases are implemented. Phases 1–2 (historical patterns, coding
-standards) are produced by `pr-review-setup` and only *read* here. Phases 3–5 (linting, story
-verification, PR description drafting) are implemented directly in this skill, below.
+**Current status:** all five phases are implemented; Phase 6 (post-review feedback and pattern tuning)
+is specified below and runs after the final report. Phases 1–2 (historical patterns, coding standards)
+are produced by `pr-review-setup` and only *read* here. Phases 3–5 (linting, story verification, PR
+description drafting) are implemented directly in this skill. Phase 6 reads and writes
+`pattern-scores.json` to tune which Phase 1–2 patterns get surfaced prominently over time.
 
 ## Before anything else: check setup has run
 
 Look for `.claude/pr-review-data/<owner>-<repo>/manifest.json` (owner/repo from `gh repo view --json
-owner,name`, or from the git remote if `gh` isn't set up). If it's missing:
+owner,name`, or from the git remote if `gh` isn't set up). Also read
+`.claude/pr-review-data/<owner>-<repo>/pattern-scores.json` if it exists — keep the full `patterns`
+map in context for this run. Phases 1 and 2 use it to tier and suppress findings; Phase 6 updates it
+based on user feedback.
+
+If the manifest is missing:
 
 - Don't try to fetch or cluster anything yourself — that's `pr-review-setup`'s job, not this skill's.
 - Tell the user no review data exists for this repo yet, and that running the `pr-review-setup` skill
@@ -53,15 +60,29 @@ whether to refresh before relying on it, not something to block on automatically
 
 1. Get the current diff: `git diff <base-branch>...HEAD` (default base to `origin/main` unless told
    otherwise).
-2. Read `.claude/pr-review-data/<owner>-<repo>/review-patterns.md` if it exists. For each pattern,
-   check whether the diff matches its "check for this" instruction. Report matches with the specific
-   file and line, and name which historical pattern it echoes (with its frequency, so the user can
-   weigh a pattern seen 40 times differently from one seen twice) — point at the specific historical
-   basis for flagging it, not just "this might be an issue."
-3. Read `.claude/pr-review-data/<owner>-<repo>/coding-standards.md` if it exists, and cross-check
-   against it too, in a clearly separate section — historical patterns and written standards are
-   different kinds of evidence, and conflating them hides useful information (e.g. a standard the team
-   has stopped enforcing in practice; call out any such conflicts explicitly).
+2. Read `.claude/pr-review-data/<owner>-<repo>/review-patterns.md` if it exists. Before checking,
+   consult the `pattern-scores.json` map loaded at startup and classify each pattern into a tier:
+
+   | Score | Tier | Behavior |
+   |---|---|---|
+   | ≥ 10 | **High priority** | Check first; label finding "(high confidence)" |
+   | 0 – 9 | Normal | Check in default order; no label |
+   | −9 to −1 | **Low priority** | Check last; label finding "(low priority — dismissed N times)" |
+   | ≤ −10 | **Suppressed** | Skip entirely; count at end of section |
+   | `explicitlyIgnored: true` | **Ignored** | Skip; count separately at end |
+
+   Patterns with no entry in the scores map are treated as score 0 (normal). For each non-suppressed
+   pattern that matches the diff, report the specific file and line, the pattern name and frequency
+   (so a pattern flagged 40 times historically weighs differently from one flagged twice), and the
+   exact historical basis. At the end of this section, if any patterns were suppressed or ignored,
+   note the counts — e.g. "3 pattern(s) suppressed (low score), 1 ignored (user-marked)" — so the
+   user knows the list was filtered.
+
+3. Read `.claude/pr-review-data/<owner>-<repo>/coding-standards.md` if it exists, apply the same
+   score-based tiering (patterns in this file match by name against the scores map), and cross-check
+   in a clearly separate section — historical patterns and written standards are different kinds of
+   evidence, and conflating them hides useful information (e.g. a standard the team has stopped
+   enforcing in practice; call out any such conflicts explicitly).
 
 ## Phase 3 — Run the project's own linters and static analysis
 
@@ -137,6 +158,92 @@ confirmation. If any phase was skipped (no setup data, no ticket found and user 
 one, no lint tooling discovered), say so explicitly in the summary rather than letting its absence
 just look like a clean bill of health.
 
+After delivering the final report, offer Phase 6: "Want to give feedback on any of these findings to
+help tune future reviews?" Keep it opt-in — skip it entirely if the user says no or doesn't respond.
+
+## Phase 6 — Post-review feedback and pattern tuning
+
+This phase runs after the user has seen the full report. It has two purposes: adjusting which patterns
+get surfaced prominently in future runs (the scoring system), and optionally automating a finding as a
+lint rule so humans never have to flag it again.
+
+### Collecting feedback
+
+Don't force the user through every finding one by one. Instead, show a numbered summary of the
+Phase 1+2 findings surfaced this run and ask: "Any of these worth adjusting?" The user can call out
+specific findings by number, or say "all good" to skip.
+
+For each finding the user calls out, ask them to classify it:
+
+| Response | What it means | Score change |
+|---|---|---|
+| "Good catch / relevant" | This pattern matters for our codebase | +2 |
+| "Not relevant this PR, but keep it" | Situational; don't penalize | 0 |
+| "Rarely comes up, deprioritize" | Lower its prominence | −1 |
+| "Never relevant here" | Suppress it after a few more hits | −3 |
+| "Ignore permanently" | Never show it again, regardless of score | Sets `explicitlyIgnored: true` |
+
+Suppression is gradual, not immediate: a single "never relevant here" response drops the score by 3
+but doesn't suppress the pattern until it crosses the ≤ −10 threshold — in a multi-person project
+where several people give feedback, a pattern needs consistent dismissal across multiple runs to get
+suppressed. The user can always force immediate suppression with "ignore permanently." This prevents
+a single mis-dismissal from hiding a genuinely useful pattern.
+
+Phase 3 (lint) findings are not scored here — they come from the project's own tooling and aren't
+Claude's judgment calls. If the user wants to act on a lint finding, use the automation path below.
+
+### Writing `pattern-scores.json`
+
+Lives at `.claude/pr-review-data/<owner>-<repo>/pattern-scores.json`. Create if absent. Schema:
+
+```json
+{
+  "version": 1,
+  "patterns": {
+    "Missing null checks on API responses": {
+      "score": -2,
+      "accepts": 1,
+      "dismissals": 3,
+      "explicitlyIgnored": false,
+      "source": "Phase 1",
+      "lastSeen": "2026-08-22"
+    }
+  }
+}
+```
+
+Batch all score updates from the session into a single write at the end of triage. Show the user a
+brief summary of what will be written ("Updating scores for 3 patterns") and confirm before writing.
+
+### Automating a finding as a lint rule
+
+Available for Phase 1+2 findings only (if the finding was already caught by a linter in Phase 3, the
+rule exists — offer to escalate its severity instead, see below).
+
+When a user says a pattern should be caught automatically rather than by AI judgment:
+
+1. Identify which linter(s) the project uses — already discovered in Phase 3.
+2. Draft the most specific rule available for that linter:
+   - **ESLint**: prefer a built-in rule; a plugin rule already in `package.json`; or
+     `no-restricted-syntax` / `no-restricted-imports` as a last resort for structural patterns.
+   - **Ruff / flake8**: a rule code in `extend-select` or `per-file-ignores` in `pyproject.toml`.
+   - **Biome**: a linter rule entry in `biome.json`.
+   - **golangci-lint**: an enabled linter entry in `.golangci.yml`.
+   - **Custom script**: if no standard rule covers the pattern, draft a small grep/ast-grep check
+     the team can add to a pre-commit hook or CI step — be explicit that this is a custom workaround,
+     not a first-class lint rule.
+3. If no rule can technically enforce the check (it's inherently judgment-based — e.g. "this
+   abstraction is the wrong level"), say so clearly. Offer to strengthen the pattern's entry in
+   `coding-standards.md` instead (e.g. promoting "should" language to "must"), or leave it to human
+   review. Don't fabricate a rule.
+4. Show the complete diff — which file, what lines change — and get explicit confirmation before
+   writing. After writing, note that Phase 3 will now catch this automatically on future runs.
+
+**For Phase 3 findings (linter already catches it):** the rule exists, so "automate" means escalating
+it. Offer to change its severity from `warn` to `error` in the linter config, or add it to the CI
+failure threshold if it currently only runs in advisory mode. Show the current config entry and the
+proposed change; confirm before writing.
+
 ## Files
 
 - `scripts/discover_lint_commands.py` — Phase 3 discovery. Fixture-tested against real script blocks
@@ -148,3 +255,5 @@ just look like a clean bill of health.
 - `references/acceptance-criteria-verification.md` — how to classify and report Phase 4 findings.
 - `references/DESIGN.md` — full five-phase design, including why this skill and `pr-review-setup` are
   split the way they are.
+- `.claude/pr-review-data/<owner>-<repo>/pattern-scores.json` — per-repo pattern score map written
+  by Phase 6. Not part of this skill's installed files; lives in the target repo's data directory.
