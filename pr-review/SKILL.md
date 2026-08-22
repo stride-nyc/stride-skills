@@ -38,10 +38,22 @@ description drafting) are implemented directly in this skill. Phase 6 reads and 
 ## Before anything else: check setup has run
 
 Look for `.claude/pr-review-data/<owner>-<repo>/manifest.json` (owner/repo from `gh repo view --json
-owner,name`, or from the git remote if `gh` isn't set up). Also read
-`.claude/pr-review-data/<owner>-<repo>/pattern-scores.json` if it exists — keep the full `patterns`
-map in context for this run. Phases 1 and 2 use it to tier and suppress findings; Phase 6 updates it
-based on user feedback.
+owner,name`, or from the git remote if `gh` isn't set up). Then load or initialize
+`pattern-scores.json` from the same directory:
+
+- **If `pattern-scores.json` exists:** read it and keep the `patterns` map in context.
+- **If it does not exist but `review-patterns.md` does:** auto-seed an initial scores file from the
+  frequency data already in `review-patterns.md`. Read each pattern's recorded frequency (the number
+  of times human reviewers raised it historically), then normalize across all patterns:
+  - Top quartile by frequency → initial score **5**
+  - Middle two quartiles → initial score **2**
+  - Bottom quartile → initial score **0**
+
+  Cap all seeded scores at 9 so no pattern starts in the high-priority (≥ 10) tier — that threshold
+  requires explicit user confirmation via Phase 6. Write the seeded file immediately so future runs
+  don't re-seed. Note to the user at the start of the run: "Initialized pattern scores from your
+  existing review history — give feedback in Phase 6 to tune them further."
+- **If neither exists:** start with an empty scores map; all patterns are treated as score 0.
 
 If the manifest is missing:
 
