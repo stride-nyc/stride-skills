@@ -5,11 +5,14 @@ description: >-
   it, using data already prepared by the companion `pr-review-setup` skill: cross-checks the diff
   against this repo's historical review feedback and coding standards, discovers and runs whatever
   linters/typecheckers already exist, verifies the change against the linked story's acceptance
-  criteria, and drafts a PR description from the repo's own template. Use for "review my PR before I
-  request review," "pre-review this branch," "check this diff before sending it out," "run the PR
-  review checklist," or drafting/updating a pull request description — even unnamed. Only *consumes*
-  prepared data; if none exists, says so and points to `pr-review-setup` instead of mining anything
-  itself. Never posts/creates/edits on GitHub without showing the user first and getting confirmation.
+  criteria, and drafts a PR description from the repo's own template. After the review, offers an
+  opt-in feedback loop to score findings — surfacing high-signal patterns more prominently over time,
+  deprioritizing low-relevance ones, and suggesting new lint rules on a separate branch when a
+  finding can be automated. Use for "review my PR before I request review," "pre-review this branch,"
+  "check this diff before sending it out," "run the PR review checklist," "tune my review patterns,"
+  or drafting/updating a pull request description — even unnamed. Only *consumes* prepared data; if
+  none exists, says so and points to `pr-review-setup` instead of mining anything itself. Never
+  posts/creates/edits on GitHub without showing the user first and getting confirmation.
 compatibility: Reads data produced by the `pr-review-setup` skill at
   `.claude/pr-review-data/<owner>-<repo>/`. Run `pr-review-setup` first if that directory doesn't
   exist yet. Uses the GitHub CLI (`gh`) for anything that touches an actual PR (viewing, creating,
@@ -29,14 +32,33 @@ would otherwise have to do by hand.
 Full design rationale — why the phases are split this way, what's been built versus just designed,
 and what was tested against a real monorepo — is in [`references/DESIGN.md`](references/DESIGN.md).
 
-**Current status:** all five phases are implemented. Phases 1–2 (historical patterns, coding
-standards) are produced by `pr-review-setup` and only *read* here. Phases 3–5 (linting, story
-verification, PR description drafting) are implemented directly in this skill, below.
+**Current status:** all five phases are implemented; Phase 6 (post-review feedback and pattern tuning)
+is specified below and runs after the final report. Phases 1–2 (historical patterns, coding standards)
+are produced by `pr-review-setup` and only *read* here. Phases 3–5 (linting, story verification, PR
+description drafting) are implemented directly in this skill. Phase 6 reads and writes
+`pattern-scores.json` to tune which Phase 1–2 patterns get surfaced prominently over time.
 
 ## Before anything else: check setup has run
 
 Look for `.claude/pr-review-data/<owner>-<repo>/manifest.json` (owner/repo from `gh repo view --json
-owner,name`, or from the git remote if `gh` isn't set up). If it's missing:
+owner,name`, or from the git remote if `gh` isn't set up). Then load or initialize
+`pattern-scores.json` from the same directory:
+
+- **If `pattern-scores.json` exists:** read it and keep the `patterns` map in context.
+- **If it does not exist but `review-patterns.md` does:** auto-seed an initial scores file from the
+  frequency data already in `review-patterns.md`. Read each pattern's recorded frequency (the number
+  of times human reviewers raised it historically), then normalize across all patterns:
+  - Top quartile by frequency → initial score **5**
+  - Middle two quartiles → initial score **2**
+  - Bottom quartile → initial score **0**
+
+  Cap all seeded scores at 9 so no pattern starts in the high-priority (≥ 10) tier — that threshold
+  requires explicit user confirmation via Phase 6. Write the seeded file immediately so future runs
+  don't re-seed. Note to the user at the start of the run: "Initialized pattern scores from your
+  existing review history — give feedback in Phase 6 to tune them further."
+- **If neither exists:** start with an empty scores map; all patterns are treated as score 0.
+
+If the manifest is missing:
 
 - Don't try to fetch or cluster anything yourself — that's `pr-review-setup`'s job, not this skill's.
 - Tell the user no review data exists for this repo yet, and that running the `pr-review-setup` skill
@@ -53,15 +75,29 @@ whether to refresh before relying on it, not something to block on automatically
 
 1. Get the current diff: `git diff <base-branch>...HEAD` (default base to `origin/main` unless told
    otherwise).
-2. Read `.claude/pr-review-data/<owner>-<repo>/review-patterns.md` if it exists. For each pattern,
-   check whether the diff matches its "check for this" instruction. Report matches with the specific
-   file and line, and name which historical pattern it echoes (with its frequency, so the user can
-   weigh a pattern seen 40 times differently from one seen twice) — point at the specific historical
-   basis for flagging it, not just "this might be an issue."
-3. Read `.claude/pr-review-data/<owner>-<repo>/coding-standards.md` if it exists, and cross-check
-   against it too, in a clearly separate section — historical patterns and written standards are
-   different kinds of evidence, and conflating them hides useful information (e.g. a standard the team
-   has stopped enforcing in practice; call out any such conflicts explicitly).
+2. Read `.claude/pr-review-data/<owner>-<repo>/review-patterns.md` if it exists. Before checking,
+   consult the `pattern-scores.json` map loaded at startup and classify each pattern into a tier:
+
+   | Score | Tier | Behavior |
+   |---|---|---|
+   | ≥ 10 | **High priority** | Check first; label finding "(high confidence)" |
+   | 0 – 9 | Normal | Check in default order; no label |
+   | −9 to −1 | **Low priority** | Check last; label finding "(low priority — dismissed N times)" |
+   | ≤ −10 | **Suppressed** | Skip entirely; count at end of section |
+   | `explicitlyIgnored: true` | **Ignored** | Skip; count separately at end |
+
+   Patterns with no entry in the scores map are treated as score 0 (normal). For each non-suppressed
+   pattern that matches the diff, report the specific file and line, the pattern name and frequency
+   (so a pattern flagged 40 times historically weighs differently from one flagged twice), and the
+   exact historical basis. At the end of this section, if any patterns were suppressed or ignored,
+   note the counts — e.g. "3 pattern(s) suppressed (low score), 1 ignored (user-marked)" — so the
+   user knows the list was filtered.
+
+3. Read `.claude/pr-review-data/<owner>-<repo>/coding-standards.md` if it exists, apply the same
+   score-based tiering (patterns in this file match by name against the scores map), and cross-check
+   in a clearly separate section — historical patterns and written standards are different kinds of
+   evidence, and conflating them hides useful information (e.g. a standard the team has stopped
+   enforcing in practice; call out any such conflicts explicitly).
 
 ## Phase 3 — Run the project's own linters and static analysis
 
@@ -137,6 +173,15 @@ confirmation. If any phase was skipped (no setup data, no ticket found and user 
 one, no lint tooling discovered), say so explicitly in the summary rather than letting its absence
 just look like a clean bill of health.
 
+After delivering the final report, offer Phase 6: "Want to give feedback on any of these findings to
+help tune future reviews?" Keep it opt-in — skip it entirely if the user says no or doesn't respond.
+
+## Phase 6 — Post-review feedback and pattern tuning
+
+If the user agrees, load [`references/feedback-loop.md`](references/feedback-loop.md) and follow it.
+It covers the feedback classification table, score update mechanics, `pattern-scores.json` schema,
+and when to suggest a lint rule for a relevant finding.
+
 ## Files
 
 - `scripts/discover_lint_commands.py` — Phase 3 discovery. Fixture-tested against real script blocks
@@ -146,5 +191,11 @@ just look like a clean bill of health.
 - `scripts/pr_template.py` — Phase 5 template discovery and checklist-preserving split. Fixture-tested
   against navigator.business.nj.gov's real PR template; self-test via `--self-test`.
 - `references/acceptance-criteria-verification.md` — how to classify and report Phase 4 findings.
+- `references/feedback-loop.md` — Phase 6 mechanics: feedback classification, score update rules,
+  `pattern-scores.json` schema. Loaded only if the user opts into Phase 6.
+- `references/lint-rule-automation.md` — lint rule suggestion logic. Loaded from feedback-loop.md
+  only when a finding is marked relevant.
 - `references/DESIGN.md` — full five-phase design, including why this skill and `pr-review-setup` are
   split the way they are.
+- `.claude/pr-review-data/<owner>-<repo>/pattern-scores.json` — per-repo pattern score map written
+  by Phase 6. Not part of this skill's installed files; lives in the target repo's data directory.
